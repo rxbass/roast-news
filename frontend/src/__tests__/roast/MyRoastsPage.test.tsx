@@ -41,7 +41,7 @@ describe('MyRoastsPage', () => {
     renderWithProviders(<MyRoastsPage />, ['/my-roasts']);
 
     const item = await screen.findByTestId('roast-list-item');
-    expect(within(item).getByRole('link', { name: /flyover/i })).toHaveAttribute(
+    expect(within(item).getByRole('link', { name: /thunder raja/i })).toHaveAttribute(
       'href',
       `/roast/${roast.id}`,
     );

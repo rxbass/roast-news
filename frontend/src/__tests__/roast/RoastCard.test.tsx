@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { RoastCard } from '../../components/roast/RoastCard';
@@ -16,14 +16,41 @@ describe('RoastCard', () => {
     expect(container.querySelector('b')).toBeNull();
   });
 
-  it('links the article title to the source with safe rel attributes', () => {
+  it('shows the movie title, year, language and poster', () => {
     renderWithProviders(<RoastCard roast={makeRoast()} />);
-    const link = screen.getByRole('link', { name: /flyover/i });
-    expect(link).toHaveAttribute('href', 'https://news.example.com/story/123');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link.getAttribute('rel')).toContain('noopener');
-    expect(link.getAttribute('rel')).toContain('noreferrer');
-    expect(link.getAttribute('rel')).toContain('nofollow');
+    expect(screen.getByRole('heading', { name: 'Thunder Raja (2019)' })).toBeInTheDocument();
+    expect(screen.getByText('Tamil')).toBeInTheDocument();
+    expect(screen.getByAltText('Thunder Raja poster')).toHaveAttribute(
+      'src',
+      'https://image.tmdb.org/t/p/w342/thunder.jpg',
+    );
+  });
+
+  it('shows the reaction GIF with GIPHY attribution', () => {
+    renderWithProviders(<RoastCard roast={makeRoast()} />);
+    expect(screen.getByAltText('Reaction GIF')).toHaveAttribute(
+      'src',
+      'https://media1.giphy.com/media/abc123/200.gif',
+    );
+    const credit = screen.getByRole('link', { name: /powered by giphy/i });
+    expect(credit).toHaveAttribute('href', 'https://giphy.com/gifs/facepalm-abc123');
+    expect(credit.getAttribute('rel')).toContain('noopener');
+  });
+
+  it('hides the GIF when the roast has none, or when it fails to load', () => {
+    const { unmount } = renderWithProviders(<RoastCard roast={makeRoast({ gif: null })} />);
+    expect(screen.queryByTestId('roast-gif')).toBeNull();
+    unmount();
+
+    renderWithProviders(<RoastCard roast={makeRoast()} />);
+    fireEvent.error(screen.getByAltText('Reaction GIF'));
+    expect(screen.queryByTestId('roast-gif')).toBeNull();
+  });
+
+  it('falls back to a clapperboard when the poster fails to load', () => {
+    renderWithProviders(<RoastCard roast={makeRoast()} />);
+    fireEvent.error(screen.getByAltText('Thunder Raja poster'));
+    expect(screen.getByTestId('poster-fallback')).toBeInTheDocument();
   });
 
   it('shows share buttons for a completed roast', () => {
@@ -42,7 +69,7 @@ describe('RoastCard', () => {
   });
 
   it('shows the refusal message and no share buttons when refused', () => {
-    const message = 'Indha news-a roast panna manasu varala machan 🙏';
+    const message = 'Indha padathai roast panna manasu varala machan 🙏';
     renderWithProviders(
       <RoastCard
         roast={makeRoast({ status: 'refused', roast_text: null, message, refusal_reason: 'sensitive_topic' })}

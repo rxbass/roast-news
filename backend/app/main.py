@@ -1,4 +1,4 @@
-"""Roast News API entrypoint."""
+"""Movie Roast API entrypoint."""
 
 import logging
 import time
@@ -15,7 +15,7 @@ from app.config import settings
 from app.core.rate_limit import limiter
 from app.exceptions import AppError, RateLimitError
 from app.logging_config import configure_logging
-from app.routers import auth, roasts
+from app.routers import auth, movies, roasts
 
 configure_logging("INFO" if settings.is_production else "DEBUG")
 logger = logging.getLogger("app")
@@ -23,9 +23,9 @@ logger = logging.getLogger("app")
 RATE_LIMIT_MESSAGE = "Konjam slow-a po machan! Roast oven cool aaganum."
 
 app = FastAPI(
-    title="Roast News API",
-    version="1.0.0",
-    description="Paste a news URL, get a Tanglish roast.",
+    title="Movie Roast API",
+    version="2.0.0",
+    description="Pick a movie, get a Tanglish roast.",
     docs_url=None if settings.is_production else "/docs",
     redoc_url=None if settings.is_production else "/redoc",
 )
@@ -91,6 +91,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
 
 # --- Routers -----------------------------------------------------------------------------------
 app.include_router(auth.router)
+app.include_router(movies.router)
 app.include_router(roasts.router)
 
 

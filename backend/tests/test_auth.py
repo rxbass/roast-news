@@ -20,7 +20,7 @@ from app.exceptions import UnauthorizedError
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services import auth_service
-from tests.conftest import make_auth_headers
+from tests.conftest import MOVIE_ID, make_auth_headers
 
 AUTH = "/api/v1/auth"
 CALLBACK_PREFIX = "http://localhost:5173/auth/callback#"
@@ -136,8 +136,8 @@ def make_auth_headers_for_id(user_id: int) -> dict[str, str]:
 
 
 def test_optional_user_anonymous_and_invalid(client: TestClient) -> None:
-    url = "https://news.example.com/story"
-    assert client.post("/api/v1/roasts", json={"url": url}).status_code == 201
+    body = {"tmdb_id": MOVIE_ID}
+    assert client.post("/api/v1/roasts", json=body).status_code == 201
     expired = encode(
         {
             "sub": "1",
@@ -147,7 +147,7 @@ def test_optional_user_anonymous_and_invalid(client: TestClient) -> None:
         }
     )
     response = client.post(
-        "/api/v1/roasts", json={"url": url}, headers={"Authorization": f"Bearer {expired}"}
+        "/api/v1/roasts", json=body, headers={"Authorization": f"Bearer {expired}"}
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Token expired"

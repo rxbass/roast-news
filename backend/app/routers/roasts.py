@@ -1,8 +1,8 @@
 """Roasts router (thin: validation + wiring; logic lives in ``services.roast_service``).
 
 DB-only endpoints are plain ``def`` so FastAPI runs their blocking SQLAlchemy calls in its
-threadpool instead of on the event loop. ``create_roast`` must stay async (it awaits the scraper
-and OpenAI); its DB calls are short and the connection is released before the slow awaits.
+threadpool instead of on the event loop. ``create_roast`` must stay async (it awaits TMDB and
+OpenAI); its DB calls are short and the connection is released before the slow awaits.
 
 Route order matters: ``/me`` is registered before ``/{roast_id}``.
 """
@@ -32,7 +32,7 @@ async def create_roast(
     """Create a roast (201, incl. refused) or return a cached one (200)."""
     result = await roast_service.create_roast(
         db,
-        url=str(data.url),
+        tmdb_id=data.tmdb_id,
         spice=data.spice_level,
         user=user,
         client_ip=get_client_ip(request),

@@ -13,8 +13,8 @@ export function getRoastErrorCopy(error: ErrorInfo): RoastErrorCopy {
     case 400:
       return {
         emoji: '🙅',
-        title: 'Indha link sari illa machan',
-        description: server ?? 'That link looks invalid or blocked. Try a public news article URL.',
+        title: 'Edho sari illa machan',
+        description: server ?? 'That request looks invalid. Pick a movie from the search results.',
       };
     case 401:
       return {
@@ -26,14 +26,14 @@ export function getRoastErrorCopy(error: ErrorInfo): RoastErrorCopy {
       return {
         emoji: '🔍',
         title: 'Thedi thedi paathen, kaanom!',
-        description: server ?? "We couldn't find that roast.",
+        description: server ?? "We couldn't find that movie or roast.",
       };
     case 422:
       return {
-        emoji: '📰',
-        title: 'Article-ae kaanom!',
+        emoji: '🎞️',
+        title: 'Padathu info romba kammi!',
         description:
-          server ?? "We couldn't read a proper article on that page. Try a direct news story link.",
+          server ?? "There isn't enough info about that movie to roast it. Try another one.",
       };
     case 429:
       return {

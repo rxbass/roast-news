@@ -1,11 +1,11 @@
 import { Box, chakra, VStack } from '@chakra-ui/react';
 import { useState, type FormEvent } from 'react';
 
-import type { RoastCreate, SpiceLevel } from '../../types/roast';
-import { AnimatedInput, GradientButton } from '../ui';
+import type { MovieSearchResult, RoastCreate, SpiceLevel } from '../../types/roast';
+import { MovieSearch } from '../movie';
+import { GradientButton } from '../ui';
 import { DEFAULT_SPICE } from './spice';
 import { SpiceSelector } from './SpiceSelector';
-import { validateNewsUrl } from './validateUrl';
 
 export interface RoastFormProps {
   onSubmit: (payload: RoastCreate) => void;
@@ -14,8 +14,10 @@ export interface RoastFormProps {
   cooldownSeconds?: number;
 }
 
+export const PICK_A_MOVIE = 'Mudhalla oru padam select pannu machan 🎬';
+
 export function RoastForm({ onSubmit, isSubmitting = false, cooldownSeconds = 0 }: RoastFormProps) {
-  const [url, setUrl] = useState('');
+  const [movie, setMovie] = useState<MovieSearchResult | null>(null);
   const [spice, setSpice] = useState<SpiceLevel>(DEFAULT_SPICE);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -24,31 +26,25 @@ export function RoastForm({ onSubmit, isSubmitting = false, cooldownSeconds = 0 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting || isCoolingDown) return;
-    const message = validateNewsUrl(url);
-    if (message) {
-      setError(message);
+    if (!movie) {
+      setError(PICK_A_MOVIE);
       return;
     }
     setError(undefined);
-    onSubmit({ url: url.trim(), spice_level: spice });
+    onSubmit({ tmdb_id: movie.tmdb_id, spice_level: spice });
   };
 
   return (
-    <Box as="form" onSubmit={handleSubmit} noValidate w="full" aria-label="Roast a news article">
+    <Box as="form" onSubmit={handleSubmit} noValidate w="full" aria-label="Roast a movie">
       <chakra.fieldset disabled={isSubmitting} border="0" p={0} m={0} minW={0}>
         <VStack spacing={5} align="stretch">
-          <AnimatedInput
-            label="News link"
-            name="url"
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            placeholder="https://example.com/news/some-story"
-            value={url}
+          <MovieSearch
+            value={movie}
             error={error}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              if (error) setError(undefined);
+            isDisabled={isSubmitting}
+            onChange={(picked) => {
+              setMovie(picked);
+              if (picked) setError(undefined);
             }}
           />
           <SpiceSelector value={spice} onChange={setSpice} isDisabled={isSubmitting} />

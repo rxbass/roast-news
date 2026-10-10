@@ -9,7 +9,7 @@ export const API_URL: string = (import.meta.env.VITE_API_URL ?? 'http://localhos
   '',
 );
 
-/** All API routes live under /api/v1 (see PRPs/roast-news-prp.md). */
+/** All API routes live under /api/v1. */
 export const API_BASE_URL = `${API_URL}/api/v1`;
 
 /** Error body shape returned by the FastAPI backend. */

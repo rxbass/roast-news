@@ -1,9 +1,9 @@
-"""Roast model: one generated (or refused/failed) roast of a news article."""
+"""Roast model: one generated (or refused/failed) roast of a movie."""
 
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, Index, String, Text, Uuid
+from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,16 +26,20 @@ class Roast(TimestampMixin, Base):
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
-    url_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_domain: Mapped[str] = mapped_column(String(255), nullable=False)
-    article_title: Mapped[str] = mapped_column(String(500), nullable=False)
-    article_excerpt: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Snapshot of the TMDB movie at roast time (permalinks keep working if TMDB changes).
+    tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    movie_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    original_language: Mapped[str] = mapped_column(String(8), nullable=False)
+    poster_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     spice_level: Mapped[SpiceLevel] = mapped_column(
         Enum(SpiceLevel, name="spice_level", values_callable=_enum_values),
         nullable=False,
     )
     roast_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Reaction GIF (GIPHY image + its page, for attribution); None when there is no GIF.
+    gif_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    gif_page_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[RoastStatus] = mapped_column(
         Enum(RoastStatus, name="roast_status", values_callable=_enum_values),
         nullable=False,
@@ -47,7 +51,7 @@ class Roast(TimestampMixin, Base):
     user: Mapped["User | None"] = relationship(back_populates="roasts")
 
     __table_args__ = (
-        Index("ix_roasts_cache_lookup", "url_hash", "spice_level", "status", "created_at"),
+        Index("ix_roasts_cache_lookup", "tmdb_id", "spice_level", "status", "created_at"),
         Index("ix_roasts_created_at", "created_at"),
     )
 

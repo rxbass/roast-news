@@ -16,3 +16,4 @@ export { DeleteRoastDialog } from './DeleteRoastDialog';
 export { SpiceBadge, StatusBadge } from './RoastBadges';
 export { RoastCardSkeleton, RoastListSkeleton } from './RoastSkeletons';
 export { SignInHint } from './SignInHint';
+export { RoastGifBox } from './RoastGifBox';

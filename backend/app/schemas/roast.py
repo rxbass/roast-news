@@ -1,36 +1,32 @@
 """Roast request/response schemas (JSON field names are the frontend contract)."""
 
 from datetime import datetime
-from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, HttpUrl, UrlConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import RoastStatus, SpiceLevel
 from app.models.roast import Roast
+from app.schemas.movie import MovieInfo
 from app.services.safety_service import FAILURE_LINE, refusal_message
+from app.services.tmdb_client import poster_url
 
-MAX_URL_LENGTH = 2048
-
-RoastUrl = Annotated[
-    HttpUrl, UrlConstraints(max_length=MAX_URL_LENGTH, allowed_schemes=["http", "https"])
-]
+# TMDB ids are positive integers; the upper bound just keeps junk out of the int4 column.
+MAX_TMDB_ID = 2_000_000_000
 
 
 class RoastCreate(BaseModel):
     """Body of ``POST /api/v1/roasts``."""
 
-    url: RoastUrl
+    tmdb_id: int = Field(ge=1, le=MAX_TMDB_ID)
     spice_level: SpiceLevel = SpiceLevel.medium
 
-    @field_validator("url")
-    @classmethod
-    def _encoded_length(cls, url: HttpUrl) -> HttpUrl:
-        # UrlConstraints checks the raw input; percent-encoding non-ASCII (e.g. a Tamil slug,
-        # 9 chars per letter) can grow it far past the 2048-char ``source_url`` column.
-        if len(str(url)) > MAX_URL_LENGTH:
-            raise ValueError(f"URL is too long once encoded (max {MAX_URL_LENGTH} characters)")
-        return url
+
+class GifInfo(BaseModel):
+    """Reaction GIF shown with a roast (``page_url`` links back to GIPHY for attribution)."""
+
+    url: str
+    page_url: str
 
 
 class RoastResponse(BaseModel):
@@ -39,11 +35,10 @@ class RoastResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    source_url: str
-    source_domain: str
-    article_title: str
+    movie: MovieInfo
     spice_level: SpiceLevel
     roast_text: str | None
+    gif: GifInfo | None = None
     status: RoastStatus
     refusal_reason: str | None
     message: str | None = None
@@ -60,12 +55,20 @@ class RoastResponse(BaseModel):
             message = FAILURE_LINE
         return cls(
             id=roast.id,
-            source_url=roast.source_url,
-            source_domain=roast.source_domain,
-            # Refused/failed pages may be abusive: don't republish their title on our permalink.
-            article_title=roast.article_title if roast.status == RoastStatus.completed else "",
+            movie=MovieInfo(
+                tmdb_id=roast.tmdb_id,
+                title=roast.movie_title,
+                year=roast.release_year,
+                original_language=roast.original_language,
+                poster_url=poster_url(roast.poster_path),
+            ),
             spice_level=roast.spice_level,
             roast_text=roast.roast_text if roast.status == RoastStatus.completed else None,
+            gif=(
+                GifInfo(url=roast.gif_url, page_url=roast.gif_page_url)
+                if roast.status == RoastStatus.completed and roast.gif_url and roast.gif_page_url
+                else None
+            ),
             status=roast.status,
             refusal_reason=roast.refusal_reason,
             message=message,

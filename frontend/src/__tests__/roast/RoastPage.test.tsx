@@ -47,8 +47,8 @@ describe('RoastPage', () => {
     renderAt(roast.id);
 
     expect(await screen.findByTestId('roast-card')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /roast your own news/i })).toBeInTheDocument();
-    expect(document.title).toContain(roast.article_title);
+    expect(screen.getByRole('button', { name: /roast another movie/i })).toBeInTheDocument();
+    expect(document.title).toContain('Thunder Raja (2019)');
   });
 
   it('shows the message for a refused roast', async () => {

@@ -30,14 +30,14 @@ export function Navbar({ rightSlot = null }: NavbarProps) {
       <Container maxW="5xl" py={3}>
         <Flex align="center" justify="space-between" gap={4}>
           <MotionBox whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-            <Link as={RouterLink} to="/" _hover={{ textDecoration: 'none' }} aria-label="Roast News home">
+            <Link as={RouterLink} to="/" _hover={{ textDecoration: 'none' }} aria-label="Movie Roast home">
               <Heading
                 as="span"
                 size="md"
                 bgGradient="linear(to-r, brand.500, chili.500)"
                 bgClip="text"
               >
-                Roast News 🌶
+                Movie Roast 🎬
               </Heading>
             </Link>
           </MotionBox>

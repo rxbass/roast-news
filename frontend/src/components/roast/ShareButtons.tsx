@@ -7,7 +7,7 @@ import { buildPermalink, buildShareText, buildWhatsAppUrl, buildXUrl } from '../
 export interface ShareButtonsProps {
   roastId: string;
   roastText: string;
-  articleTitle?: string;
+  movieTitle?: string;
 }
 
 function canNativeShare(): boolean {
@@ -18,7 +18,7 @@ function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
-export function ShareButtons({ roastId, roastText, articleTitle }: ShareButtonsProps) {
+export function ShareButtons({ roastId, roastText, movieTitle }: ShareButtonsProps) {
   const toast = useToast();
   const permalink = buildPermalink(roastId);
   const shareText = buildShareText(roastText, permalink);
@@ -43,7 +43,11 @@ export function ShareButtons({ roastId, roastText, articleTitle }: ShareButtonsP
 
   const handleNativeShare = async () => {
     try {
-      await navigator.share({ title: articleTitle ?? 'Roast News 🌶', text: roastText, url: permalink });
+      await navigator.share({
+        title: movieTitle ? `${movieTitle} roast 🎬` : 'Movie Roast 🎬',
+        text: roastText,
+        url: permalink,
+      });
     } catch (err) {
       if (!isAbortError(err)) {
         toast({ status: 'error', title: 'Share aagala, try Copy instead', duration: 3000, isClosable: true });

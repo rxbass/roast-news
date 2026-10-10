@@ -36,14 +36,23 @@ class Settings(BaseSettings):
 
     # OpenAI
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL: str = "gpt-4.1"
     OPENAI_TIMEOUT_SECONDS: int = 30
+
+    # TMDB (movie data). A v3 API key or a v4 read-access token (starts with "eyJ").
+    TMDB_API_KEY: str = ""
+    TMDB_TIMEOUT_SECONDS: int = 10
+
+    # GIPHY (reaction GIFs). Optional: empty disables GIFs.
+    GIPHY_API_KEY: str = ""
+    GIPHY_TIMEOUT_SECONDS: int = 5
 
     # Limits & safety
     RATE_LIMIT_ANON: str = "5/hour"
     RATE_LIMIT_USER: str = "20/hour"
     DAILY_ROAST_LIMIT: int = 1000
     ROAST_CACHE_HOURS: int = 24
+    RATE_LIMIT_SEARCH: str = "60/minute"
     IP_HASH_SALT: str
     # Number of reverse proxies in front of the API that append to X-Forwarded-For.
     # 0 (default) = the API is exposed directly, so the header is ignored (it's spoofable).

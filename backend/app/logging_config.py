@@ -29,7 +29,6 @@ def configure_logging(level: str = "INFO") -> None:
                 # Quiet chatty third-party loggers.
                 "httpx": {"level": "WARNING"},
                 "openai": {"level": "WARNING"},
-                "trafilatura": {"level": "WARNING"},
             },
         }
     )

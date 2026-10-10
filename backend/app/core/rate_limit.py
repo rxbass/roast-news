@@ -86,6 +86,11 @@ def dynamic_limit(key: str) -> str:
     return settings.RATE_LIMIT_ANON
 
 
+def search_limit(key: str) -> str:
+    """slowapi limit provider for the movie search box (same budget for everyone)."""
+    return settings.RATE_LIMIT_SEARCH
+
+
 limiter = Limiter(key_func=rate_limit_key, headers_enabled=False)
 
 

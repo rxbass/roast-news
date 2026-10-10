@@ -79,7 +79,7 @@ export function MyRoastsPage() {
               <Heading as="h2" size="sm" fontFamily="body">
                 Innum onnum roast pannala!
               </Heading>
-              <Text>You haven&apos;t roasted any news yet. Start with your first one.</Text>
+              <Text>You haven&apos;t roasted any movies yet. Start with your favourite (or least favourite) one.</Text>
               <GradientButton onClick={() => navigate('/')}>Roast something 🔥</GradientButton>
             </VStack>
           </GlassCard>

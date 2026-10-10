@@ -1,9 +1,9 @@
-"""Shared fixtures for the Roast News backend test suite.
+"""Shared fixtures for the Movie Roast backend test suite.
 
 Environment is configured BEFORE the app is imported so ``app.config.settings`` and the
-SQLAlchemy engine point at the dedicated test database. OpenAI and the article scraper are
-replaced by in-memory fakes for every test (see ``fake_llm`` / ``fake_scraper``), so the suite
-never touches the network.
+SQLAlchemy engine point at the dedicated test database. OpenAI and TMDB are replaced by
+in-memory fakes for every test (see ``fake_llm`` / ``fake_tmdb``), so the suite never touches
+the network.
 """
 
 import os
@@ -26,6 +26,7 @@ os.environ["DATABASE_URL"] = _pick_test_database_url()
 os.environ["SECRET_KEY"] = "test-secret-key-for-pytest-only-0123456789abcdef"
 os.environ["IP_HASH_SALT"] = "test-ip-hash-salt"
 os.environ["OPENAI_API_KEY"] = "test-key"
+os.environ["TMDB_API_KEY"] = "test-tmdb-key"
 os.environ["GOOGLE_CLIENT_ID"] = ""
 os.environ["GOOGLE_CLIENT_SECRET"] = ""
 os.environ["FRONTEND_URL"] = "http://localhost:5173"
@@ -50,28 +51,40 @@ from app.config import settings
 from app.core.rate_limit import limiter, reset_daily_limit
 from app.core.security import hash_ip
 from app.database import SessionLocal, engine
-from app.exceptions import AppError
+from app.exceptions import AppError, NotFoundError
 from app.main import app
 from app.models.enums import RoastStatus, SpiceLevel
 from app.models.roast import Roast
 from app.models.user import User
-from app.services import llm_client, roast_service
-from app.services.llm_client import SensitiveResult
-from app.services.scraper_service import Article
-from app.services.url_utils import normalize_url, url_hash
+from app.services import gif_client, llm_client, tmdb_client
+from app.services.gif_client import Gif
+from app.services.llm_client import GeneratedRoast, SensitiveResult
+from app.services.tmdb_client import MovieDetails, MovieSummary
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 FAKE_ROAST_TEXT = (
-    "Machan, indha news paatha udane en filter coffee-ae cold aayiduchu! "
-    "Corporation-la meeting pottu meeting pottu, road mattum appadiye irukku da."
+    "172 minutes padam machan, popcorn rendu thadava vaanga vendiyadhaa pochu! "
+    "Hero intro-ku mattum 10 minutes slow motion, logic-a veetla vechitu ponga."
 )
 
-ARTICLE_TEXT = (
-    "The city corporation announced on Monday that it will hold another meeting to discuss "
-    "the long-pending road repair project in the neighbourhood. Residents said they have "
-    "heard the same promise many times over the last five years, while officials insisted "
-    "that this time the funds have finally been sanctioned and work will begin soon."
+MOVIE_ID = 4242
+
+MOVIE = MovieDetails(
+    tmdb_id=MOVIE_ID,
+    title="Thunder Raja",
+    original_title="Thunder Raja",
+    year=2019,
+    original_language="ta",
+    poster_path="/thunder.jpg",
+    overview="A village man takes on a corrupt mining baron to save his town.",
+    tagline="One man. One village.",
+    genres=("Action", "Drama"),
+    runtime_minutes=172,
+    rating=6.4,
+    vote_count=120,
+    directors=("K. Director",),
+    cast=("Hero Actor", "Heroine Actor"),
 )
 
 
@@ -131,6 +144,7 @@ def _reset_limits(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # Generous defaults so ordinary tests never trip the limiter; rate-limit tests lower them.
     monkeypatch.setattr(settings, "RATE_LIMIT_ANON", "1000/hour")
     monkeypatch.setattr(settings, "RATE_LIMIT_USER", "1000/hour")
+    monkeypatch.setattr(settings, "RATE_LIMIT_SEARCH", "1000/minute")
     monkeypatch.setattr(settings, "DAILY_ROAST_LIMIT", 100000)
     yield
     limiter.reset()
@@ -145,7 +159,7 @@ def _reset_openai_client() -> Iterator[None]:
 
 
 # --------------------------------------------------------------------------------------------
-# Fakes for OpenAI + scraper
+# Fakes for OpenAI + TMDB
 # --------------------------------------------------------------------------------------------
 @dataclass
 class FakeLLM:
@@ -157,6 +171,7 @@ class FakeLLM:
     sensitive: bool = False
     category: str = "none"
     roast_text: str = FAKE_ROAST_TEXT
+    gif_mood: str | None = "facepalm"
     generate_error: Exception | None = None
     moderate_calls: list[str] = field(default_factory=list)
     classify_calls: int = 0
@@ -168,32 +183,15 @@ class FakeLLM:
             return True
         return self.flag_everything or text_ in self.flagged_texts
 
-    async def classify_sensitive(self, title: str, text_: str) -> SensitiveResult:
+    async def classify_sensitive(self, title: str, context: str) -> SensitiveResult:
         self.classify_calls += 1
         return SensitiveResult(sensitive=self.sensitive, category=self.category)
 
-    async def generate_roast(self, title: str, text_: str, spice: SpiceLevel) -> str:
+    async def generate_roast(self, title: str, context: str, spice: SpiceLevel) -> GeneratedRoast:
         self.generate_calls += 1
         if self.generate_error is not None:
             raise self.generate_error
-        return self.roast_text
-
-
-@dataclass
-class FakeScraper:
-    """Programmable stand-in for ``roast_service.fetch_article``."""
-
-    title: str = "Corporation to hold yet another meeting on road repairs"
-    text: str = ARTICLE_TEXT
-    error: AppError | None = None
-    calls: list[str] = field(default_factory=list)
-
-    async def fetch_article(self, url: str) -> Article:
-        self.calls.append(url)
-        if self.error is not None:
-            raise self.error
-        domain = normalize_url(url).split("/")[2].removeprefix("www.")
-        return Article(title=self.title, text=self.text, domain=domain, final_url=url)
+        return GeneratedRoast(text=self.roast_text, gif_mood=self.gif_mood)
 
 
 @pytest.fixture(autouse=True)
@@ -206,15 +204,83 @@ def fake_llm(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) ->
     return fake
 
 
+@dataclass
+class FakeTMDB:
+    """Programmable stand-in for ``app.services.tmdb_client`` (search + details)."""
+
+    movies: dict[int, MovieDetails] = field(default_factory=lambda: {MOVIE_ID: MOVIE})
+    error: AppError | None = None
+    search_calls: list[str] = field(default_factory=list)
+    get_calls: list[int] = field(default_factory=list)
+
+    async def search_movies(self, query: str) -> list[MovieSummary]:
+        self.search_calls.append(query)
+        if self.error is not None:
+            raise self.error
+        return [
+            MovieSummary(
+                tmdb_id=m.tmdb_id,
+                title=m.title,
+                year=m.year,
+                original_language=m.original_language,
+                poster_path=m.poster_path,
+                overview=m.overview,
+            )
+            for m in self.movies.values()
+            if query.lower() in m.title.lower()
+        ]
+
+    async def get_movie(self, tmdb_id: int) -> MovieDetails:
+        self.get_calls.append(tmdb_id)
+        if self.error is not None:
+            raise self.error
+        movie = self.movies.get(tmdb_id)
+        if movie is None:
+            raise NotFoundError(detail="Movie not found")
+        return movie
+
+
 @pytest.fixture(autouse=True)
-def fake_scraper(monkeypatch: pytest.MonkeyPatch) -> FakeScraper:
-    fake = FakeScraper()
-    monkeypatch.setattr(roast_service, "fetch_article", fake.fetch_article)
+def fake_tmdb(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> FakeTMDB:
+    fake = FakeTMDB()
+    tmdb_client.clear_cache()
+    if request.node.get_closest_marker("real_tmdb") is None:
+        monkeypatch.setattr(tmdb_client, "search_movies", fake.search_movies)
+        monkeypatch.setattr(tmdb_client, "get_movie", fake.get_movie)
+    return fake
+
+
+FAKE_GIF = Gif(
+    url="https://media1.giphy.com/media/abc123/200.gif",
+    page_url="https://giphy.com/gifs/facepalm-abc123",
+)
+
+
+@dataclass
+class FakeGifs:
+    """Programmable stand-in for ``gif_client.pick_gif``."""
+
+    gif: Gif | None = FAKE_GIF
+    calls: list[tuple[str | None, str]] = field(default_factory=list)
+
+    async def pick_gif(self, mood: str | None, seed: str) -> Gif | None:
+        self.calls.append((mood, seed))
+        return self.gif
+
+
+@pytest.fixture(autouse=True)
+def fake_gifs(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> FakeGifs:
+    fake = FakeGifs()
+    gif_client.clear_cache()
+    if request.node.get_closest_marker("real_gifs") is None:
+        monkeypatch.setattr(gif_client, "pick_gif", fake.pick_gif)
     return fake
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "real_llm: do not replace llm_client functions with fakes")
+    config.addinivalue_line("markers", "real_tmdb: do not replace tmdb_client functions with fakes")
+    config.addinivalue_line("markers", "real_gifs: do not replace gif_client.pick_gif with a fake")
 
 
 # --------------------------------------------------------------------------------------------
@@ -272,7 +338,7 @@ def roast_factory(db: Session) -> Callable[..., Roast]:
     def make(
         *,
         user: User | None = None,
-        url: str = "https://news.example.com/story",
+        tmdb_id: int = MOVIE_ID,
         spice: SpiceLevel = SpiceLevel.medium,
         status: RoastStatus = RoastStatus.completed,
         roast_text: str | None = FAKE_ROAST_TEXT,
@@ -284,11 +350,11 @@ def roast_factory(db: Session) -> Callable[..., Roast]:
             kwargs["created_at"] = created_at
         roast = Roast(
             user_id=user.id if user is not None else None,
-            source_url=url,
-            url_hash=url_hash(normalize_url(url)),
-            source_domain="news.example.com",
-            article_title="A headline",
-            article_excerpt=ARTICLE_TEXT[:300],
+            tmdb_id=tmdb_id,
+            movie_title=MOVIE.title,
+            release_year=MOVIE.year,
+            original_language=MOVIE.original_language,
+            poster_path=MOVIE.poster_path,
             spice_level=spice,
             roast_text=roast_text if status == RoastStatus.completed else None,
             status=status,

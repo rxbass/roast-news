@@ -2,6 +2,7 @@ import { Heading, Text, VStack } from '@chakra-ui/react';
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { movieLabel } from '../components/movie';
 import { RoastCard, RoastCardSkeleton, RoastErrorCard } from '../components/roast';
 import { GlassCard, GradientButton, PageWrapper } from '../components/ui';
 import { useRoast } from '../hooks/useRoast';
@@ -12,11 +13,11 @@ export function RoastPage() {
   const navigate = useNavigate();
   const { data: roast, error, isPending, isError, refetch } = useRoast(id);
 
-  const title = roast?.article_title;
+  const title = roast ? movieLabel(roast.movie) : undefined;
   useEffect(() => {
     if (!title) return undefined;
     const previous = document.title;
-    document.title = `${title} | Roast News 🌶`;
+    document.title = `${title} roast | Movie Roast 🎬`;
     return () => {
       document.title = previous;
     };
@@ -50,7 +51,7 @@ export function RoastPage() {
           <>
             <RoastCard roast={roast} />
             <GradientButton onClick={goHome} w={{ base: 'full', sm: 'auto' }}>
-              Roast your own news →
+              Roast another movie →
             </GradientButton>
           </>
         )}

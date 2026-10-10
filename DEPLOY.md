@@ -1,6 +1,6 @@
-# Deploying Roast News to a VPS (Docker + Cloudflare Tunnel)
+# Deploying Movie Roast to a VPS (Docker + Cloudflare Tunnel)
 
-Roast News shares a VPS with other apps without touching their ports or proxy. A Cloudflare
+Movie Roast shares a VPS with other apps without touching their ports or proxy. A Cloudflare
 Tunnel is the only way in: `cloudflared` connects *out* to Cloudflare, Cloudflare terminates
 HTTPS for the domain, and no container publishes a host port.
 
@@ -21,8 +21,8 @@ visitor ─HTTPS─> Cloudflare ─tunnel─> cloudflared ─┬─ /api/*, /hea
 
    | # | Hostname | Path | Service |
    |---|---|---|---|
-   | 1 | `roastmynews.sbs` | `^/(api/.*\|health)$` | `http://backend:8000` |
-   | 2 | `roastmynews.sbs` | *(empty)* | `http://frontend:80` |
+   | 1 | `movieroast.live` | `^/(api/.*\|health)$` | `http://backend:8000` |
+   | 2 | `movieroast.live` | *(empty)* | `http://frontend:80` |
 
 4. SSL/TLS → Edge Certificates: turn on **Always Use HTTPS**.
 
@@ -41,12 +41,15 @@ Set at least:
 
 | Variable | Value |
 |---|---|
-| `DOMAIN` | `roastmynews.sbs` (no `https://`) |
+| `DOMAIN` | `movieroast.live` (no `https://`) |
 | `TUNNEL_TOKEN` | the tunnel token from step 1.2 |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `SECRET_KEY` | `openssl rand -hex 32` |
 | `IP_HASH_SALT` | `openssl rand -hex 16` |
 | `OPENAI_API_KEY` | your key |
+| `OPENAI_MODEL` | `gpt-4.1` (default) |
+| `TMDB_API_KEY` | TMDB v3 API key or v4 read-access token (required) |
+| `GIPHY_API_KEY` | optional; blank disables reaction GIFs |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional; blank disables Google sign-in |
 
 `docker-compose.prod.yml` derives `ENVIRONMENT=production`, `FRONTEND_URL`, `GOOGLE_REDIRECT_URI`,
@@ -60,7 +63,7 @@ cd /opt/roast-news
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-curl -s https://roastmynews.sbs/health     # {"status":"ok","database":"ok"}
+curl -s https://movieroast.live/health     # {"status":"ok","database":"ok"}
 docker image prune -f
 ```
 

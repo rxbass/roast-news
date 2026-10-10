@@ -15,6 +15,7 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { formatDateTime, formatRelativeTime } from '../../lib/format';
 import type { Roast } from '../../types/roast';
+import { languageName, MoviePoster, movieLabel } from '../movie';
 import { SpiceBadge, StatusBadge } from './RoastBadges';
 
 export interface RoastListItemProps {
@@ -26,7 +27,7 @@ export interface RoastListItemProps {
 export function RoastListItem({ roast, onDelete, isDeleting = false }: RoastListItemProps) {
   const bg = useColorModeValue('whiteAlpha.800', 'whiteAlpha.100');
   const borderColor = useColorModeValue('gray.100', 'whiteAlpha.200');
-  const title = roast.article_title || roast.source_domain;
+  const title = movieLabel(roast.movie);
 
   return (
     <Flex
@@ -41,6 +42,7 @@ export function RoastListItem({ roast, onDelete, isDeleting = false }: RoastList
       _hover={{ boxShadow: 'md' }}
       data-testid="roast-list-item"
     >
+      <MoviePoster url={roast.movie.poster_url} title={roast.movie.title} w="44px" />
       <LinkBox flex="1" minW={0}>
         <LinkOverlay as={RouterLink} to={`/roast/${roast.id}`}>
           <Text fontWeight="semibold" noOfLines={2} wordBreak="break-word">
@@ -48,7 +50,7 @@ export function RoastListItem({ roast, onDelete, isDeleting = false }: RoastList
           </Text>
         </LinkOverlay>
         <HStack spacing={2} fontSize="xs" color="gray.500" mt={1} flexWrap="wrap">
-          <Text noOfLines={1}>{roast.source_domain}</Text>
+          <Text noOfLines={1}>{languageName(roast.movie.original_language)}</Text>
           <Text aria-hidden="true">•</Text>
           <Tooltip label={formatDateTime(roast.created_at)} openDelay={400}>
             <Text as="time" dateTime={roast.created_at}>

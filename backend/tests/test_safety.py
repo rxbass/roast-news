@@ -3,62 +3,55 @@
 import pytest
 
 from app.exceptions import UpstreamError
-from app.services import llm_client, safety_service
+from app.services import llm_client
 from app.services.safety_service import (
     REFUSAL_LINES,
     RefusalReason,
-    check_article,
+    check_movie,
     check_output,
     is_model_refusal,
     refusal_message,
 )
-from app.services.scraper_service import Article
-from tests.conftest import ARTICLE_TEXT, FakeLLM
-
-ARTICLE = Article(
-    title="Road repairs", text=ARTICLE_TEXT, domain="news.example.com", final_url="https://x"
-)
+from app.services.tmdb_client import movie_context
+from tests.conftest import MOVIE, FakeLLM
 
 
-async def test_clean_article_is_allowed(fake_llm: FakeLLM) -> None:
-    verdict = await check_article(ARTICLE)
+async def test_clean_movie_is_allowed(fake_llm: FakeLLM) -> None:
+    verdict = await check_movie(MOVIE)
     assert verdict.allowed is True
     assert verdict.reason is None
     assert fake_llm.classify_calls == 1
-    assert fake_llm.moderate_calls == [f"{ARTICLE.title}\n\n{ARTICLE.text}"]
+    assert fake_llm.moderate_calls == []  # TMDB facts aren't user input: no input moderation
 
 
-async def test_moderation_flag_wins_over_classifier(fake_llm: FakeLLM) -> None:
-    fake_llm.flag_everything = True
+async def test_sensitive_movie_is_refused(fake_llm: FakeLLM) -> None:
     fake_llm.sensitive = True
-    verdict = await check_article(ARTICLE)
-    assert verdict.allowed is False
-    assert verdict.reason is RefusalReason.moderation_flagged
-    assert fake_llm.classify_calls == 1  # both checks run concurrently
-
-
-async def test_sensitive_article_is_refused(fake_llm: FakeLLM) -> None:
-    fake_llm.sensitive = True
-    fake_llm.category = "disaster"
-    verdict = await check_article(ARTICLE)
+    fake_llm.category = "real_tragedy"
+    verdict = await check_movie(MOVIE)
     assert verdict.allowed is False
     assert verdict.reason is RefusalReason.sensitive_topic
-    assert verdict.category == "disaster"
+    assert verdict.category == "real_tragedy"
 
 
-async def test_check_article_truncates_sample(fake_llm: FakeLLM) -> None:
-    long_article = Article(title="T", text="z" * 10_000, domain="d", final_url="u")
-    await check_article(long_article)
-    assert len(fake_llm.moderate_calls[0]) == safety_service.CHECK_CHAR_LIMIT
+async def test_check_movie_sends_title_and_fact_sheet(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[tuple[str, str]] = []
+
+    async def spy(title: str, context: str) -> llm_client.SensitiveResult:
+        seen.append((title, context))
+        return llm_client.SensitiveResult(sensitive=False, category="none")
+
+    monkeypatch.setattr(llm_client, "classify_sensitive", spy)
+    await check_movie(MOVIE)
+    assert seen == [(MOVIE.title, movie_context(MOVIE))]
 
 
-async def test_check_article_propagates_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def broken(text: str) -> bool:
+async def test_check_movie_propagates_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def broken(title: str, context: str) -> llm_client.SensitiveResult:
         raise UpstreamError("down")
 
-    monkeypatch.setattr(llm_client, "moderate", broken)
+    monkeypatch.setattr(llm_client, "classify_sensitive", broken)
     with pytest.raises(UpstreamError):
-        await check_article(ARTICLE)
+        await check_movie(MOVIE)
 
 
 @pytest.mark.parametrize("flagged", [True, False])
@@ -72,8 +65,8 @@ async def test_check_output(fake_llm: FakeLLM, flagged: bool) -> None:
     ("text", "expected"),
     [
         (REFUSAL_LINES[0], True),
-        ("IDHU ROAST PANNA VENDIYA NEWS ILLA machan", True),
-        ("Machan semma news!", False),
+        ("IDHU ROAST PANNA VENDIYA PADAM ILLA machan", True),
+        ("Machan semma padam!", False),
     ],
 )
 def test_is_model_refusal(text: str, expected: bool) -> None:

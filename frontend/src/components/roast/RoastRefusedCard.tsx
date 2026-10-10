@@ -2,8 +2,9 @@ import { Heading, HStack, Text, useColorModeValue, VStack } from '@chakra-ui/rea
 
 import { MotionBox } from '../../lib/motion';
 import type { Roast } from '../../types/roast';
+import { movieLabel } from '../movie';
 
-const FALLBACK_REFUSED = 'Indha news-a roast panna manasu varala machan. Vera link try pannu! 🙏';
+const FALLBACK_REFUSED = 'Indha padathai roast panna manasu varala machan. Vera padam try pannu! 🙏';
 const FALLBACK_FAILED = 'Roast oven konjam burn aagiduchu. Try again in a bit! 😅';
 
 /** Soft (yellow/orange) card for refused or failed roasts. Never shows share buttons. */
@@ -31,19 +32,15 @@ export function RoastRefusedCard({ roast }: { roast: Roast }) {
             {isFailed ? '😵' : '🙏'}
           </Text>
           <Heading as="h2" size="sm" fontFamily="body">
-            {isFailed ? 'Roast fail aagiduchu' : 'Indha news-ku roast illa'}
+            {isFailed ? 'Roast fail aagiduchu' : 'Indha padathukku roast illa'}
           </Heading>
         </HStack>
         <Text whiteSpace="pre-line" wordBreak="break-word">
           {roast.message?.trim() || (isFailed ? FALLBACK_FAILED : FALLBACK_REFUSED)}
         </Text>
-        {/* Only the domain: a refused page's title/link is attacker-controlled text we
-            must not republish on our own permalink. */}
-        {roast.source_domain && (
-          <Text fontSize="sm" color="gray.500" wordBreak="break-word">
-            Source: {roast.source_domain}
-          </Text>
-        )}
+        <Text fontSize="sm" color="gray.500" wordBreak="break-word">
+          Movie: {movieLabel(roast.movie)}
+        </Text>
       </VStack>
     </MotionBox>
   );

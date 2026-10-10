@@ -10,6 +10,7 @@ import {
 import { useRef } from 'react';
 
 import type { Roast } from '../../types/roast';
+import { movieLabel } from '../movie';
 
 export interface DeleteRoastDialogProps {
   roast: Roast | null;
@@ -35,7 +36,7 @@ export function DeleteRoastDialog({ roast, isDeleting, onConfirm, onClose }: Del
             Delete this roast?
           </AlertDialogHeader>
           <AlertDialogBody>
-            &ldquo;{roast?.article_title || roast?.source_domain}&rdquo; will be gone for good. Sure-a machan?
+            &ldquo;{roast ? movieLabel(roast.movie) : ''}&rdquo; roast will be gone for good. Sure-a machan?
           </AlertDialogBody>
           <AlertDialogFooter gap={3}>
             <Button ref={cancelRef} onClick={onClose} variant="ghost" isDisabled={isDeleting}>

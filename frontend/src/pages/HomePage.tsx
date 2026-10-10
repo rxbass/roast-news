@@ -47,12 +47,12 @@ export function HomePage() {
         <VStack spacing={3} px={2}>
           <Heading as="h1" size={{ base: 'xl', md: '3xl' }} lineHeight="short">
             <Box as="span" bgGradient="linear(to-r, brand.500, chili.500)" bgClip="text">
-              Roast News
+              Movie Roast
             </Box>{' '}
-            <span aria-hidden="true">🌶</span>
+            <span aria-hidden="true">🎬</span>
           </Heading>
           <Text fontSize={{ base: 'md', md: 'xl' }} maxW="xl" color="gray.600" _dark={{ color: 'gray.300' }}>
-            Paste any news link. Get it roasted in Tanglish.
+            Pick any movie. Get it roasted in Tanglish, back-row style.
           </Text>
         </VStack>
 

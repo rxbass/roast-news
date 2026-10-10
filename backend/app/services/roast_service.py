@@ -1,4 +1,4 @@
-"""Roast orchestration: cache -> daily cap -> scrape -> safety -> generate -> safety -> persist."""
+"""Roast orchestration: cache -> TMDB -> daily cap -> safety -> generate -> safety -> persist."""
 
 import logging
 import uuid
@@ -11,18 +11,17 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.rate_limit import check_daily_limit
 from app.core.security import hash_ip
-from app.exceptions import NotFoundError, UpstreamError
+from app.exceptions import NotFoundError, UnprocessableError, UpstreamError
 from app.models.enums import RoastStatus, SpiceLevel
 from app.models.roast import Roast
 from app.models.user import User
-from app.services import llm_client, safety_service
+from app.services import gif_client, llm_client, safety_service, tmdb_client
 from app.services.safety_service import RefusalReason
-from app.services.scraper_service import Article, fetch_article
-from app.services.url_utils import normalize_url, url_hash
+from app.services.tmdb_client import MovieDetails
 
 logger = logging.getLogger(__name__)
 
-EXCERPT_CHARS = 300
+THIN_MOVIE_MESSAGE = "Indha padathu pathi info romba kammi machan. Vera padam try pannunga."
 
 
 @dataclass(frozen=True)
@@ -33,8 +32,8 @@ class RoastResult:
     cached: bool
 
 
-def _find_cached(db: Session, hashed: str, spice: SpiceLevel, user: User | None) -> Roast | None:
-    """Newest completed roast for (url_hash, spice) within the cache window.
+def _find_cached(db: Session, tmdb_id: int, spice: SpiceLevel, user: User | None) -> Roast | None:
+    """Newest completed roast for (tmdb_id, spice) within the cache window.
 
     A signed-in user's own row is preferred so repeat requests don't create duplicate copies.
     """
@@ -42,7 +41,7 @@ def _find_cached(db: Session, hashed: str, spice: SpiceLevel, user: User | None)
     base = (
         select(Roast)
         .where(
-            Roast.url_hash == hashed,
+            Roast.tmdb_id == tmdb_id,
             Roast.spice_level == spice,
             Roast.status == RoastStatus.completed,
             Roast.created_at >= cutoff,
@@ -67,39 +66,42 @@ def _save(db: Session, roast: Roast) -> Roast:
 async def create_roast(
     db: Session,
     *,
-    url: str,
+    tmdb_id: int,
     spice: SpiceLevel,
     user: User | None,
     client_ip: str,
 ) -> RoastResult:
-    """Create (or return a cached) roast for ``url``.
+    """Create (or return a cached) roast for the TMDB movie ``tmdb_id``.
 
     Raises:
+        NotFoundError: unknown or adult title (not persisted).
+        UnprocessableError: TMDB has too little about the film to roast (not persisted).
         RateLimitError: global daily cap reached (only when a new generation is needed).
-        BadRequestError / UnprocessableError / UpstreamError: from the scraper (not persisted).
-        UpstreamError: OpenAI failure after scraping (a ``failed`` row is persisted first).
+        UpstreamError: TMDB failure (not persisted) or OpenAI failure (a ``failed`` row is
+            persisted first).
     """
-    hashed = url_hash(normalize_url(url))
     ip_hash = hash_ip(client_ip)
     user_id = user.id if user is not None else None
 
-    cached = _find_cached(db, hashed, spice, user)
+    cached = _find_cached(db, tmdb_id, spice, user)
     if cached is None:
-        # End the read transaction so its pooled connection isn't held across the scrape and
-        # the OpenAI calls (tens of seconds); the session reconnects for the final INSERT.
+        # End the read transaction so its pooled connection isn't held across the TMDB and
+        # OpenAI calls (tens of seconds); the session reconnects for the final INSERT.
         db.rollback()
     if cached is not None:
-        logger.info("Cache hit for roast %s (%s)", cached.id, cached.source_domain)
+        logger.info("Cache hit for roast %s (movie %s)", cached.id, tmdb_id)
         if user_id is not None and cached.user_id != user_id:
             copy = Roast(
                 user_id=user_id,
-                source_url=url,
-                url_hash=hashed,
-                source_domain=cached.source_domain,
-                article_title=cached.article_title,
-                article_excerpt=cached.article_excerpt,
+                tmdb_id=cached.tmdb_id,
+                movie_title=cached.movie_title,
+                release_year=cached.release_year,
+                original_language=cached.original_language,
+                poster_path=cached.poster_path,
                 spice_level=spice,
                 roast_text=cached.roast_text,
+                gif_url=cached.gif_url,
+                gif_page_url=cached.gif_page_url,
                 status=RoastStatus.completed,
                 refusal_reason=None,
                 model=cached.model,
@@ -108,22 +110,36 @@ async def create_roast(
             return RoastResult(roast=_save(db, copy), cached=True)
         return RoastResult(roast=cached, cached=True)
 
-    article = await fetch_article(url)
-    # Counted only once the URL is real and fetchable: junk/blocked URLs are rejected above
-    # without spending the global budget, so they can't be used to exhaust it for everyone.
+    movie = await tmdb_client.get_movie(tmdb_id)
+    if not tmdb_client.has_enough_to_roast(movie):
+        raise UnprocessableError(
+            detail="Not enough movie details to roast", message=THIN_MOVIE_MESSAGE
+        )
+    # Counted only once the movie is real and roastable: bogus ids are rejected above without
+    # spending the global budget, so they can't be used to exhaust it for everyone.
     check_daily_limit()
 
-    def build(status: RoastStatus, *, text: str | None = None, reason: str | None = None) -> Roast:
+    roast_id = uuid.uuid4()
+
+    def build(
+        status: RoastStatus,
+        *,
+        text: str | None = None,
+        reason: str | None = None,
+        gif: gif_client.Gif | None = None,
+    ) -> Roast:
         return Roast(
-            id=uuid.uuid4(),
+            id=roast_id,
             user_id=user_id,
-            source_url=url,
-            url_hash=hashed,
-            source_domain=article.domain[:255],
-            article_title=article.title[:500],
-            article_excerpt=article.text[:EXCERPT_CHARS],
+            tmdb_id=movie.tmdb_id,
+            movie_title=movie.title[:300],
+            release_year=movie.year,
+            original_language=movie.original_language[:8],
+            poster_path=movie.poster_path,
             spice_level=spice,
             roast_text=text,
+            gif_url=gif.url if gif else None,
+            gif_page_url=gif.page_url if gif else None,
             status=status,
             refusal_reason=reason,
             model=settings.OPENAI_MODEL[:64],
@@ -131,34 +147,36 @@ async def create_roast(
         )
 
     try:
-        status, roast_text, reason = await _generate(article, spice)
+        status, generated, reason = await _generate(movie, spice)
     except UpstreamError:
         failed = _save(db, build(RoastStatus.failed))
         logger.warning("Roast %s failed: OpenAI upstream error", failed.id)
         raise
 
-    roast = _save(db, build(status, text=roast_text, reason=reason))
-    logger.info(
-        "Roast %s %s (%s, %s)", roast.id, roast.status.value, roast.source_domain, spice.value
-    )
+    gif = await gif_client.pick_gif(generated.gif_mood, str(roast_id)) if generated else None
+    text = generated.text if generated else None
+    roast = _save(db, build(status, text=text, reason=reason, gif=gif))
+    logger.info("Roast %s %s (movie %s, %s)", roast.id, roast.status.value, tmdb_id, spice.value)
     return RoastResult(roast=roast, cached=False)
 
 
 async def _generate(
-    article: Article, spice: SpiceLevel
-) -> tuple[RoastStatus, str | None, str | None]:
-    """Run the safety checks and the generation; return (status, roast_text, refusal_reason)."""
-    verdict = await safety_service.check_article(article)
+    movie: MovieDetails, spice: SpiceLevel
+) -> tuple[RoastStatus, llm_client.GeneratedRoast | None, str | None]:
+    """Run the safety checks and the generation; return (status, roast, refusal_reason)."""
+    verdict = await safety_service.check_movie(movie)
     if not verdict.allowed:
         reason = verdict.reason or RefusalReason.sensitive_topic
         return RoastStatus.refused, None, reason.value
 
-    roast_text = await llm_client.generate_roast(article.title, article.text, spice)
-    if safety_service.is_model_refusal(roast_text):
+    generated = await llm_client.generate_roast(
+        movie.title, tmdb_client.movie_context(movie), spice
+    )
+    if safety_service.is_model_refusal(generated.text):
         return RoastStatus.refused, None, RefusalReason.sensitive_topic.value
-    if await safety_service.check_output(roast_text):
+    if await safety_service.check_output(generated.text):
         return RoastStatus.refused, None, RefusalReason.output_flagged.value
-    return RoastStatus.completed, roast_text, None
+    return RoastStatus.completed, generated, None
 
 
 def parse_roast_id(raw: str) -> uuid.UUID:

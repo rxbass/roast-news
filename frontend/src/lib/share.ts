@@ -9,7 +9,7 @@ export const X_MAX_LENGTH = 280;
 const ELLIPSIS = '…';
 const SEPARATOR = '\n\n';
 
-/** Absolute permalink for a roast, e.g. https://roast.news/roast/<id>. */
+/** Absolute permalink for a roast, e.g. https://movieroast.live/roast/<id>. */
 export function buildPermalink(id: string, origin: string = window.location.origin): string {
   return `${origin.replace(/\/+$/, '')}/roast/${encodeURIComponent(id)}`;
 }

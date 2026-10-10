@@ -2,9 +2,9 @@ import {
   Badge,
   Box,
   Divider,
+  Flex,
   Heading,
   HStack,
-  Link,
   Text,
   useColorModeValue,
   VStack,
@@ -14,7 +14,9 @@ import {
 import { formatDateTime } from '../../lib/format';
 import { MotionBox } from '../../lib/motion';
 import type { Roast } from '../../types/roast';
+import { languageName, MoviePoster, movieLabel } from '../movie';
 import { SpiceBadge } from './RoastBadges';
+import { RoastGifBox } from './RoastGifBox';
 import { RoastRefusedCard } from './RoastRefusedCard';
 import { ShareButtons } from './ShareButtons';
 
@@ -36,6 +38,8 @@ export function RoastCard({ roast, showShare = true }: RoastCardProps) {
   if (roast.status !== 'completed' || !roast.roast_text) {
     return <RoastRefusedCard roast={roast} />;
   }
+
+  const { movie } = roast;
 
   return (
     <MotionBox
@@ -59,39 +63,39 @@ export function RoastCard({ roast, showShare = true }: RoastCardProps) {
       data-testid="roast-card"
     >
       <VStack align="stretch" spacing={4}>
-        <Wrap spacing={2} align="center">
-          <SpiceBadge level={roast.spice_level} />
-          <Badge variant="subtle" colorScheme={roast.cached ? 'purple' : 'green'} borderRadius="full" px={2}>
-            {roast.cached ? 'Already roasted 🔁' : 'Fresh from the oven'}
-          </Badge>
-        </Wrap>
-
-        <Box minW={0}>
-          <Heading
-            as="h2"
-            size="sm"
-            fontFamily="body"
-            lineHeight="short"
-            noOfLines={2}
-            wordBreak="break-word"
-          >
-            <Link
-              href={roast.source_url}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              _hover={{ color: 'brand.500', textDecoration: 'underline' }}
+        <Flex gap={4} align="flex-start">
+          <MoviePoster url={movie.poster_url} title={movie.title} w={{ base: '64px', md: '80px' }} />
+          <Box minW={0} flex="1">
+            <Heading
+              as="h2"
+              size="md"
+              fontFamily="body"
+              lineHeight="short"
+              noOfLines={2}
+              wordBreak="break-word"
             >
-              {roast.article_title || roast.source_domain}
-            </Link>
-          </Heading>
-          <HStack spacing={2} fontSize="xs" color="gray.500" mt={1} flexWrap="wrap">
-            <Text>{roast.source_domain}</Text>
-            <Text aria-hidden="true">•</Text>
-            <Text as="time" dateTime={roast.created_at}>
-              {formatDateTime(roast.created_at)}
-            </Text>
-          </HStack>
-        </Box>
+              {movieLabel(movie)}
+            </Heading>
+            <HStack spacing={2} fontSize="xs" color="gray.500" mt={1} flexWrap="wrap">
+              <Text>{languageName(movie.original_language)}</Text>
+              <Text aria-hidden="true">•</Text>
+              <Text as="time" dateTime={roast.created_at}>
+                {formatDateTime(roast.created_at)}
+              </Text>
+            </HStack>
+            <Wrap spacing={2} align="center" mt={2}>
+              <SpiceBadge level={roast.spice_level} />
+              <Badge
+                variant="subtle"
+                colorScheme={roast.cached ? 'purple' : 'green'}
+                borderRadius="full"
+                px={2}
+              >
+                {roast.cached ? 'Already roasted 🔁' : 'Fresh from the oven'}
+              </Badge>
+            </Wrap>
+          </Box>
+        </Flex>
 
         <Box
           bg={quoteBg}
@@ -111,13 +115,15 @@ export function RoastCard({ roast, showShare = true }: RoastCardProps) {
           </Text>
         </Box>
 
+        {roast.gif && <RoastGifBox gif={roast.gif} />}
+
         {showShare && (
           <>
             <Divider />
             <ShareButtons
               roastId={roast.id}
               roastText={roast.roast_text}
-              articleTitle={roast.article_title}
+              movieTitle={movieLabel(movie)}
             />
           </>
         )}

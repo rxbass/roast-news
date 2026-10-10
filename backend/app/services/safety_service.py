@@ -1,17 +1,14 @@
-"""Content safety: moderation + sensitive-topic checks, and playful Tanglish refusal lines."""
+"""Content safety: sensitive-film check, output moderation, and playful Tanglish refusal lines."""
 
-import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
 from app.services import llm_client
-from app.services.scraper_service import Article
+from app.services.tmdb_client import MovieDetails, movie_context
 
 logger = logging.getLogger(__name__)
-
-CHECK_CHAR_LIMIT = 4000
 
 
 class RefusalReason(StrEnum):
@@ -23,12 +20,12 @@ class RefusalReason(StrEnum):
 
 
 REFUSAL_LINES: tuple[str, ...] = (
-    "Idhu roast panna vendiya news illa machan 🙏",
-    "Ayyo, indha news-ku kalaai panna manasu varala machan. Vera link kudu 🙏",
-    "Sila news-ku roast illa, respect dhaan. Next article try pannunga 🙏",
-    "Machan, idhu serious matter. Tea-shop comedy-ku idhu set aagadhu 🙏",
-    "Indha scene-u la joke adikka koodadhu machan. Vera edhavadhu kudu 🙏",
-    "Paavam da, idhula comedy illa. Oru jolly news paathu varalaam 🙏",
+    "Idhu roast panna vendiya padam illa machan 🙏",
+    "Ayyo, indha padathukku kalaai panna manasu varala machan. Vera padam sollu 🙏",
+    "Sila padathukku roast illa, respect dhaan. Next movie try pannunga 🙏",
+    "Machan, idhu real-life pain pathi padam. Back-row comedy-ku set aagadhu 🙏",
+    "Indha kadhai-la joke adikka koodadhu machan. Vera edhavadhu kudu 🙏",
+    "Paavam da, idhula comedy illa. Oru mass masala padam paathu varalaam 🙏",
 )
 
 FAILURE_LINE = "Server konjam tired, try again machan."
@@ -36,32 +33,23 @@ FAILURE_LINE = "Server konjam tired, try again machan."
 
 @dataclass(frozen=True)
 class SafetyVerdict:
-    """Outcome of the pre-generation article check."""
+    """Outcome of the pre-generation movie check."""
 
     allowed: bool
     reason: RefusalReason | None = None
     category: str | None = None
 
 
-async def check_article(article: Article) -> SafetyVerdict:
-    """Moderate the article, then run the sensitive-topic classifier.
+async def check_movie(movie: MovieDetails) -> SafetyVerdict:
+    """Ask the classifier whether this film is off-limits for jokes.
 
-    Raises ``UpstreamError`` if OpenAI fails.
+    The movie facts come from TMDB, not from the user, so there is no input moderation pass;
+    the generated roast is still moderated by ``check_output``. Raises ``UpstreamError`` if
+    OpenAI fails.
     """
-    sample = f"{article.title}\n\n{article.text}"[:CHECK_CHAR_LIMIT]
-    # Independent checks: run them concurrently to save a round trip.
-    flagged, result = await asyncio.gather(
-        llm_client.moderate(sample),
-        llm_client.classify_sensitive(article.title, article.text[:CHECK_CHAR_LIMIT]),
-    )
-    if flagged:
-        logger.info("Article from %s refused: moderation flagged", article.domain)
-        return SafetyVerdict(allowed=False, reason=RefusalReason.moderation_flagged)
-
+    result = await llm_client.classify_sensitive(movie.title, movie_context(movie))
     if result.sensitive:
-        logger.info(
-            "Article from %s refused: sensitive topic (%s)", article.domain, result.category
-        )
+        logger.info("Movie %s refused: sensitive (%s)", movie.tmdb_id, result.category)
         return SafetyVerdict(
             allowed=False, reason=RefusalReason.sensitive_topic, category=result.category
         )
@@ -79,8 +67,8 @@ async def check_output(roast_text: str) -> bool:
 def is_model_refusal(roast_text: str) -> bool:
     """True when the model itself declined (the prompt tells it to emit ``[[REFUSE]]``)."""
     text = roast_text.strip()
-    # Also catch the older Tanglish refusal line, in case the model paraphrases the rule.
-    return llm_client.REFUSAL_SENTINEL in text or "roast panna vendiya news illa" in text.lower()
+    # Also catch our own Tanglish refusal line, in case the model paraphrases the rule.
+    return llm_client.REFUSAL_SENTINEL in text or "roast panna vendiya padam illa" in text.lower()
 
 
 def refusal_message(reason: str | None, seed: str) -> str:
