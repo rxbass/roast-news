@@ -1,37 +1,39 @@
-# Deploying Roast News to a VPS (Hostinger, Docker)
+# Deploying Roast News to a VPS (Docker + Cloudflare Tunnel)
 
-One domain, automatic HTTPS. Caddy is the only public service:
+Roast News shares a VPS with other apps without touching their ports or proxy. A Cloudflare
+Tunnel is the only way in: `cloudflared` connects *out* to Cloudflare, Cloudflare terminates
+HTTPS for the domain, and no container publishes a host port.
 
 ```
-Internet ──443──> caddy ──/api/*, /health──> backend:8000 ──> db:5432
-                        └──everything else──> frontend:80 (nginx, React build)
+visitor ─HTTPS─> Cloudflare ─tunnel─> cloudflared ─┬─ /api/*, /health → backend:8000 ──> db
+                                                   └─ everything else  → frontend:80 (nginx, React build)
 ```
 
-## 1. Prerequisites
+## 1. Cloudflare (once)
 
-- A Hostinger VPS (Ubuntu 22.04/24.04, 2 GB RAM or more recommended), with SSH access.
-- A domain (or subdomain), e.g. `roast.example.com`, with an **A record pointing to the VPS IP**.
-  Check with `nslookup roast.example.com` before continuing; Caddy needs it to get a certificate.
+1. **Add the domain** to Cloudflare (Free plan); a registrar transfer is not needed. Point the domain's
+   nameservers at the two Cloudflare gives you, and wait until the site shows **Active**.
+   Delete any old `A` record for the apex; the tunnel creates its own record.
+2. **Create the tunnel**: Zero Trust → Networks → Tunnels → Create tunnel → *Cloudflared*,
+   name `roast-news`. Copy the **token** from the install command (the long string after
+   `--token`). It is a secret.
+3. **Public hostnames** (routes) on the tunnel, in this order:
 
-## 2. Server setup (once)
+   | # | Hostname | Path | Service |
+   |---|---|---|---|
+   | 1 | `roastmynews.sbs` | `^/(api/.*\|health)$` | `http://backend:8000` |
+   | 2 | `roastmynews.sbs` | *(empty)* | `http://frontend:80` |
+
+4. SSL/TLS → Edge Certificates: turn on **Always Use HTTPS**.
+
+## 2. Server (once)
+
+As the `deploy` user (in the `docker` group):
 
 ```bash
-ssh root@<VPS_IP>
-
-# Docker Engine + compose plugin (skip if you chose Hostinger's "Docker" OS template)
-curl -fsSL https://get.docker.com | sh
-
-# Firewall: SSH + web only
-ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw --force enable
-
 git clone https://github.com/rxbass/roast-news.git /opt/roast-news
 cd /opt/roast-news
-```
-
-## 3. Production `.env` (on the server only, never committed)
-
-```bash
-cp .env.example .env
+cp .env.example .env && chmod 600 .env
 nano .env
 ```
 
@@ -39,52 +41,43 @@ Set at least:
 
 | Variable | Value |
 |---|---|
-| `DOMAIN` | `roast.example.com` (no `https://`) |
+| `DOMAIN` | `roastmynews.sbs` (no `https://`) |
+| `TUNNEL_TOKEN` | the tunnel token from step 1.2 |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `SECRET_KEY` | `openssl rand -hex 32` |
 | `IP_HASH_SALT` | `openssl rand -hex 16` |
 | `OPENAI_API_KEY` | your key |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional; blank disables Google sign-in |
 
-`docker-compose.prod.yml` sets `ENVIRONMENT=production`, `FRONTEND_URL`, `GOOGLE_REDIRECT_URI`,
-`CORS_ORIGINS`, `TRUSTED_PROXY_COUNT` and the frontend's API URL from `DOMAIN`, so those don't need editing.
+`docker-compose.prod.yml` derives `ENVIRONMENT=production`, `FRONTEND_URL`, `GOOGLE_REDIRECT_URI`,
+`CORS_ORIGINS`, `TRUSTED_PROXY_COUNT` and the frontend's API URL from `DOMAIN`.
 The backend refuses to start in production with weak or `change-me` secrets.
 
-`chmod 600 .env`
-
-## 4. Start
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-curl https://roast.example.com/health      # {"status":"ok","database":"ok"}
-```
-
-Migrations run automatically when the backend starts.
-
-## 5. Google sign-in (optional)
-
-In Google Cloud Console → OAuth client → add the authorised redirect URI
-`https://<DOMAIN>/api/v1/auth/google/callback`.
-
-## 6. Updating
+## 3. Start / update
 
 ```bash
 cd /opt/roast-news
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+curl -s https://roastmynews.sbs/health     # {"status":"ok","database":"ok"}
 docker image prune -f
 ```
 
-## 7. Operations
+Migrations run automatically when the backend starts.
+
+## 4. Google sign-in (optional)
+
+Google Cloud Console → OAuth client → authorised redirect URI
+`https://<DOMAIN>/api/v1/auth/google/callback`.
+
+## 5. Operations
 
 ```bash
-# Logs
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend caddy
-
-# Database backup
-docker compose exec -T db pg_dump -U roast roast_news | gzip > ~/roast_news_$(date +%F).sql.gz
+alias rn='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+rn logs -f backend cloudflared
+rn exec -T db pg_dump -U roast roast_news | gzip > ~/roast_news_$(date +%F).sql.gz   # backup
 ```
 
-Rate limits and the daily OpenAI cap are kept in memory, so they reset when the backend restarts.
+Rate limits and the daily OpenAI cap are kept in memory and reset when the backend restarts.
 Run a single backend instance (the default).
