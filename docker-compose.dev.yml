@@ -1,0 +1,58 @@
+# Standalone development stack (not an override):
+#   docker compose -f docker-compose.dev.yml up
+name: roast-news-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-roast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roast}
+      POSTGRES_DB: ${POSTGRES_DB:-roast_news}
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-roast}:${POSTGRES_PASSWORD:-roast}@db:5432/${POSTGRES_DB:-roast_news}
+      ENVIRONMENT: development
+      FRONTEND_URL: http://localhost:5173
+    # Run migrations then start uvicorn with autoreload
+    entrypoint: ["sh", "-c"]
+    command:
+      - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data_dev:
