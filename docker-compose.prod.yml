@@ -1,0 +1,45 @@
+# VPS overlay: Caddy terminates HTTPS on one domain and is the only public entry point.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Requires DOMAIN in .env and a DNS A record pointing at the server. See DEPLOY.md.
+
+services:
+  backend:
+    # Reachable only through Caddy.
+    ports: !reset []
+    environment:
+      ENVIRONMENT: production
+      # Caddy is the single proxy hop in front of the API (for per-IP rate limits).
+      TRUSTED_PROXY_COUNT: "1"
+      FRONTEND_URL: https://${DOMAIN:?DOMAIN must be set in .env}
+      GOOGLE_REDIRECT_URI: https://${DOMAIN}/api/v1/auth/google/callback
+      CORS_ORIGINS: '["https://${DOMAIN}"]'
+
+  frontend:
+    ports: !reset []
+    build:
+      args:
+        # Same origin: the SPA calls https://DOMAIN/api/v1/...
+        VITE_API_URL: https://${DOMAIN}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:
