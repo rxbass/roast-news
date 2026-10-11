@@ -19,7 +19,8 @@ from app.exceptions import NotFoundError, UpstreamError
 
 logger = logging.getLogger(__name__)
 
-TMDB_API_BASE = "https://api.themoviedb.org/3"
+# TMDB's alternate API host: some Indian ISPs reset connections to api.themoviedb.org.
+TMDB_API_BASE = "https://api.tmdb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342"
 SEARCH_LIMIT = 8
 CAST_LIMIT = 6
